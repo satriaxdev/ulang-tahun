@@ -1,0 +1,243 @@
+<!--
+  prank-hacker.html
+  - Simpel, aman, cuma visual. Bisa dibuka di browser / Acode.
+  - Sesuaikan `VICTIM_NAME` atau teks lain di bagian CONFIG.
+-->
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Terminal — system</title>
+<style>
+  :root{
+    --bg:#000;
+    --fg:#33ff55;
+    --muted:#0f0f0f;
+    --glass: rgba(0,0,0,0.45);
+  }
+  html,body{height:100%;margin:0;font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", "Courier New", monospace;background:var(--bg);color:var(--fg);}
+  canvas#matrix{position:fixed;inset:0;z-index:0;opacity:0.28;mix-blend-mode:screen;}
+  .panel{position:relative;z-index:2;max-width:1000px;margin:40px auto;padding:24px;border-radius:12px;background:linear-gradient(180deg, rgba(0,0,0,0.55), rgba(0,0,0,0.65));box-shadow:0 10px 40px rgba(0,0,0,0.7);backdrop-filter: blur(6px);border:1px solid rgba(60,255,120,0.06);}
+  header{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+  .led{width:12px;height:12px;border-radius:50%;background:#ff4d4d;box-shadow:0 0 6px #ff4d4d inset}
+  h1{font-size:18px;margin:0;color:var(--fg);letter-spacing:0.6px}
+  .term{background:rgba(0,0,0,0.85);border-radius:8px;padding:18px;min-height:360px;box-shadow:inset 0 0 40px rgba(0,0,0,0.5);overflow:hidden;border:1px solid rgba(50,255,100,0.04)}
+  .screen{white-space:pre-wrap;font-size:14px;line-height:1.35;opacity:0.98}
+  .input-caret{display:inline-block;width:10px;height:18px;background:var(--fg);margin-left:4px;animation:blink 900ms steps(1) infinite}
+  @keyframes blink{50%{opacity:0}}
+  .progress{height:12px;background:rgba(255,255,255,0.03);border-radius:8px;overflow:hidden;margin:10px 0;width:100%}
+  .bar{height:100%;background:linear-gradient(90deg,#00ff88,#22aa44);width:0%}
+  .controls{display:flex;gap:8px;margin-top:12px}
+  .btn{background:transparent;border:1px solid rgba(255,255,255,0.06);padding:8px 12px;border-radius:8px;color:var(--fg);cursor:pointer}
+  .small{font-size:12px;color:rgba(51,255,85,0.9)}
+  footer{margin-top:12px;font-size:12px;color:rgba(51,255,85,0.6)}
+  /* fake console colors */
+  .log-ok{color:#88ff88}
+  .log-warn{color:#ffcc66}
+  .log-err{color:#ff5a5a}
+  .monospace{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", monospace}
+  /* responsive */
+  @media (max-width:600px){
+    .panel{margin:12px;padding:14px}
+    .term{min-height:320px}
+  }
+</style>
+</head>
+<body>
+<canvas id="matrix"></canvas>
+
+<div class="panel">
+  <header>
+    <div class="led"></div>
+    <h1>system-terminal • secure-shell</h1>
+    <div style="margin-left:auto" class="small">user: <span id="userLabel">guest</span> • node: vX.Y.Z</div>
+  </header>
+
+  <div class="term monospace">
+    <div id="screen" class="screen"></div>
+  </div>
+
+  <div class="controls">
+    <button id="startBtn" class="btn">Mulai prank</button>
+    <button id="fastBtn" class="btn">Mode cepat</button>
+    <button id="stopBtn" class="btn">Hentikan</button>
+  </div>
+
+  <footer>Prank visual — tidak menjalankan perintah nyata. Buat: ChatGPT</footer>
+</div>
+
+<script>
+/* ========== CONFIG ========== */
+const CONFIG = {
+  VICTIM_NAME: "Teman",      // ubah sesuai sasaran (opsional)
+  TYPING_SPEED: 28,          // ms per karakter (kecil = cepat)
+  MATRIX_DENSITY: 0.45,      // 0..1, berapa rapat drop
+  ENABLE_BEEP: true,         // beep saat progress complete
+};
+/* ======== /CONFIG ========= */
+
+/* Utilities */
+const el = id=>document.getElementById(id);
+const screen = el('screen');
+const startBtn = el('startBtn');
+const stopBtn = el('stopBtn');
+const fastBtn = el('fastBtn');
+let running = false;
+let typingSpeed = CONFIG.TYPING_SPEED;
+
+/* Fake script lines to show */
+const script = [
+  `> connect remote-host:443`,
+  `> handshake TLS... OK`,
+  `> establishing secure tunnel to ${CONFIG.VICTIM_NAME.toUpperCase()}`,
+  `> fetching credentials...`,
+  `> brute-force-sim /usr/bin/lock --threads=8`,
+  `> injecting payload...`,
+  `> spawning shell @ 192.168.0.1`,
+  `> exfiltrate --target remote.storage/s3bucket --compress=gzip`,
+  `> cleaning traces...`,
+  `> complete`,
+];
+
+/* Typing effect */
+function sleep(ms){return new Promise(r=>setTimeout(r,ms))}
+async function typeLine(line, speedOverride){
+  const speed = speedOverride ?? typingSpeed;
+  for(let i=0;i<line.length;i++){
+    if(!running) return false;
+    screen.innerHTML += line[i];
+    window.scrollTo(0, document.body.scrollHeight);
+    await sleep(speed);
+  }
+  screen.innerHTML += '\n';
+  return true;
+}
+
+/* Fake progress bar rendering */
+async function fakeProgress(label, duration=2200){
+  if(!running) return false;
+  screen.innerHTML += `${label}\n`;
+  const steps = 24;
+  for(let i=0;i<=steps;i++){
+    if(!running) return false;
+    const pct = Math.round((i/steps)*100);
+    const bar = '[' + '='.repeat(Math.round(i*1.2)) + ' '.repeat(30-Math.round(i*1.2)) + `] ${pct}%`;
+    // rewrite last line: emulate by removing last line and appending
+    // simple approach: append and add small delay
+    screen.innerHTML += bar + '\n';
+    window.scrollTo(0, document.body.scrollHeight);
+    await sleep(duration/steps);
+  }
+  screen.innerHTML += '\n';
+  return true;
+}
+
+/* Fake log sequence */
+async function runPrank(){
+  running = true;
+  startBtn.disabled = true;
+  stopBtn.disabled = false;
+  screen.innerHTML = '';
+  el('userLabel').textContent = CONFIG.VICTIM_NAME.toLowerCase();
+  const startTime = new Date().toLocaleString();
+  screen.innerHTML += `// system boot @ ${startTime}\n\n`;
+  for(let i=0;i<script.length;i++){
+    if(!running) break;
+    const line = script[i];
+    // occasional progress
+    if(line.includes('fetching') || line.includes('injecting') || line.includes('exfiltrate')){
+      await typeLine('> ' + line, Math.max(6, typingSpeed-6));
+      if(!running) break;
+      await fakeProgress('> progress:');
+    } else {
+      await typeLine('> ' + line);
+    }
+    await sleep(220 + Math.random()*500);
+  }
+  if(running){
+    screen.innerHTML += `\n// session closed — bye.\n`;
+    if(CONFIG.ENABLE_BEEP) playBeep();
+  } else {
+    screen.innerHTML += `\n// session aborted.\n`;
+  }
+  running = false;
+  startBtn.disabled = false;
+  stopBtn.disabled = true;
+}
+
+/* Buttons */
+startBtn.addEventListener('click', ()=>{ if(!running) runPrank(); });
+stopBtn.addEventListener('click', ()=>{ running = false; });
+fastBtn.addEventListener('click', ()=>{
+  typingSpeed = 6;
+  CONFIG.MATRIX_DENSITY = 0.7;
+});
+
+/* Simple beep */
+function playBeep(){
+  try{
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type='sine';
+    o.frequency.value = 880;
+    o.connect(g); g.connect(ctx.destination);
+    o.start();
+    g.gain.setValueAtTime(0.0001, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.35);
+    o.stop(ctx.currentTime + 0.36);
+  }catch(e){ /* ignore on unsupported */ }
+}
+
+/* ===== MATRIX BACKGROUND ===== */
+const canvas = document.getElementById('matrix');
+const ctx = canvas.getContext('2d');
+let W = canvas.width = innerWidth;
+let H = canvas.height = innerHeight;
+window.addEventListener('resize', ()=>{ W = canvas.width = innerWidth; H = canvas.height = innerHeight; initMatrix(); });
+
+const letters = '01ABCDXYZ@#$%<>?*+-=/\\|';
+let fontSize = 14;
+let columns;
+let drops;
+
+function initMatrix(){
+  fontSize = Math.max(12, Math.floor(Math.min(18, innerWidth/90)));
+  columns = Math.floor(W / fontSize);
+  drops = new Array(columns).fill(1).map(()=>Math.floor(Math.random()*H/fontSize));
+}
+initMatrix();
+
+function drawMatrix(){
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.12)';
+  ctx.fillRect(0,0,W,H);
+  ctx.font = `${fontSize}px monospace`;
+  for(let i=0;i<columns;i++){
+    const char = letters.charAt(Math.floor(Math.random() * letters.length));
+    const x = i * fontSize;
+    const y = drops[i] * fontSize;
+    // brighter leading char
+    ctx.fillStyle = 'rgba(51,255,85,0.9)';
+    ctx.fillText(char, x, y);
+    if(Math.random() > 0.975 * (1 - CONFIG.MATRIX_DENSITY)) drops[i] = 0;
+    drops[i]++;
+    if(drops[i]*fontSize > H && Math.random() > 0.98) drops[i] = 0;
+  }
+}
+
+/* loop */
+let matrixLoop = setInterval(drawMatrix, 45);
+
+/* small keyboard prank: fake caret blinking (visual only) */
+(function caret(){
+  const caret = document.createElement('span'); caret.className='input-caret';
+  screen.appendChild(caret);
+})();
+
+/* expose quick start (optional) */
+// runPrank(); // uncomment to auto-start on page load (not recommended)
+</script>
+</body>
+</html>
